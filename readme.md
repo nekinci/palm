@@ -1,6 +1,6 @@
 # palm language
 
-Palm is an programming language where you can write your code in a way that you can understand it easily.
+Palm is a programming language where you can write your code in a way that you can understand it easily.
 
 There will a lot of things to do for palm language. I will try to do my best to make it better.
 
