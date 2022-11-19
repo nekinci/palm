@@ -11,6 +11,8 @@ const (
 	StarToken
 	SlashToken
 	WhitespaceToken
+	OpenParenToken
+	CloseParenToken
 )
 
 func (sk SyntaxKind) String() string {
@@ -31,6 +33,10 @@ func (sk SyntaxKind) String() string {
 		return "SlashToken"
 	case WhitespaceToken:
 		return "WhitespaceToken"
+	case OpenParenToken:
+		return "OpenParenToken"
+	case CloseParenToken:
+		return "CloseParenToken"
 	default:
 		return string(sk)
 	}
@@ -82,6 +88,18 @@ func (l *Lexer) readToken() Token {
 			l.position++
 		}
 		l.kind = NumberToken
+		return l.makeToken()
+	}
+
+	if l.Current() == '(' {
+		l.position++
+		l.kind = OpenParenToken
+		return l.makeToken()
+	}
+
+	if l.Current() == ')' {
+		l.position++
+		l.kind = CloseParenToken
 		return l.makeToken()
 	}
 

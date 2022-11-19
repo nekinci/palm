@@ -4,7 +4,7 @@ import "fmt"
 
 func main() {
 
-	var lexer *Lexer = NewLexer("1 + 2")
+	var lexer *Lexer = NewLexer("(1 + 2)")
 	var token Token = lexer.Do()
 
 	for token.Kind != EOFToken {
