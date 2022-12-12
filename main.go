@@ -1,16 +1,14 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"myProgrammingLanguage/parse"
+)
 
 func main() {
+	parser := parse.NewParser("test", "(1+2) * (3+1) + 5")
 
-	var lexer *Lexer = NewLexer("(1 + 2)")
-	var token Token = lexer.Do()
-
-	for token.Kind != EOFToken {
-		if token.Kind != WhitespaceToken {
-			fmt.Printf("TokenKind: %v, TokenText: %v\n", token.Kind.String(), token.Text)
-		}
-		token = lexer.Do()
-	}
+	evaluator := NewEvaluator(parser)
+	result, _ := evaluator.Evaluate()
+	fmt.Println(result)
 }
