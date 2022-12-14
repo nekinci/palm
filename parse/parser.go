@@ -43,7 +43,17 @@ func (p *Parser) Parse() (*SyntaxTree, error) {
 }
 
 func (p *Parser) parseExpression(parentPrecedence int) Node {
-	left := p.parsePrimary()
+	var left Node
+	unaryPrecedence := p.currentToken().Kind.GetUnaryPrecedence()
+
+	if unaryPrecedence != 0 && unaryPrecedence >= parentPrecedence {
+		token := p.getCurrentAndNext()
+		expr := p.parseExpression(unaryPrecedence)
+		left = NewUnaryExpressionNode(p.tree, token, expr)
+	} else {
+		left = p.parsePrimary()
+	}
+
 	for {
 		precedence := p.currentToken().Kind.GetBinaryPrecedence()
 		if precedence == 0 || precedence <= parentPrecedence {
@@ -63,6 +73,8 @@ func (p *Parser) parsePrimary() Node {
 		return p.parseNumber()
 	case LPAREN:
 		return p.parseParenthesizedExpression()
+	case FALSE, TRUE:
+		return p.parseBoolean()
 	}
 
 	return nil
@@ -88,5 +100,17 @@ func (p *Parser) parseNumber() Node {
 		NumberKind: NumberInt,
 		Raw:        val,
 		Int:        int64(valInt),
+	}
+}
+
+func (p *Parser) parseBoolean() Node {
+	val := p.getCurrentAndNext().Val
+	// Todo think about error handling
+	valBool, _ := strconv.ParseBool(val)
+
+	return &BooleanNode{
+		NodeKind: NodeBoolean,
+		Raw:      val,
+		Val:      valBool,
 	}
 }

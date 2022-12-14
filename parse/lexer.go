@@ -26,6 +26,11 @@ const (
 	LPAREN // (
 	RPAREN // )
 	NUMBER // 12345
+	BANG   // !
+
+	FALSE // false
+	TRUE  // true
+
 )
 
 const (
@@ -36,6 +41,7 @@ const (
 	mulToken    = "*"
 	quoToken    = "/"
 	remToken    = "%"
+	bangToken   = "!"
 )
 
 var stringKind = map[string]TokenKind{
@@ -46,6 +52,7 @@ var stringKind = map[string]TokenKind{
 	"%":         REM,
 	lparenToken: LPAREN,
 	rparenToken: RPAREN,
+	bangToken:   BANG,
 }
 
 func (k TokenKind) String() string {
@@ -77,6 +84,10 @@ func (k TokenKind) String() string {
 
 func (k TokenKind) GetBinaryPrecedence() int {
 	return GetBinaryOperatorPrecedence(k)
+}
+
+func (k TokenKind) GetUnaryPrecedence() int {
+	return GetUnaryOperatorPrecedence(k)
 }
 
 type Token struct {
@@ -212,26 +223,42 @@ func lexText(l *Lexer) StateFn {
 		return lexWhitespace
 	case r == '(':
 		return lexLeftParen
-	case r == '+' || r == '-' || r == '*' || r == '/' || r == '%':
+	case r == '+' || r == '-' || r == '*' || r == '/' || r == '%' || r == '!':
 		return lexOperator
 	case r == ')':
 		return lexRightParen
 	case r >= '0' && r <= '9':
 		return lexNumber
+	case r == 't' || r == 'f':
+		return lexBoolean
 	default:
 		return l.errorf("unrecognized character in input: %q", r)
 	}
 
 }
 
+func lexBoolean(l *Lexer) StateFn {
+	if l.accept("t") {
+		l.acceptRun("rue")
+		l.emit(TRUE)
+		return lexText
+	}
+	if l.accept("f") {
+		l.acceptRun("alse")
+		l.emit(FALSE)
+		return lexText
+	}
+	return l.errorf("unrecognized character in input: %q", l.next())
+}
+
 func lexLeftParen(l *Lexer) StateFn {
-	l.pos += len(lparenToken)
+	l.accept(lparenToken)
 	l.emit(LPAREN)
 	return lexText
 }
 
 func lexRightParen(l *Lexer) StateFn {
-	l.pos += len(rparenToken)
+	l.accept(rparenToken)
 	l.emit(RPAREN)
 	return lexText
 }
@@ -243,6 +270,12 @@ func lexNumber(l *Lexer) StateFn {
 }
 
 func lexOperator(l *Lexer) StateFn {
+
+	if l.accept(bangToken) {
+		l.emit(BANG)
+		return lexText
+	}
+
 	l.acceptRun("+-*/%")
 	l.emit(stringKind[l.input[l.start:l.pos]])
 	return lexText
@@ -252,17 +285,4 @@ func lexWhitespace(l *Lexer) StateFn {
 	l.acceptRun(Whitespace)
 	l.ignore()
 	return lexText
-}
-
-func GetTokens(input string) []Token {
-	l := NewLexer("test", input)
-	var tokens []Token
-	for {
-		t := l.nextToken()
-		tokens = append(tokens, t)
-		if t.Kind == EOF {
-			break
-		}
-	}
-	return tokens
 }
