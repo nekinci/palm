@@ -6,9 +6,10 @@ import (
 )
 
 func main() {
-	parser := parse.NewParser("test", "(1+2) * (3+1) + 5")
+	parser := parse.NewParser("test", "1 << 1")
 
 	evaluator := NewEvaluator(parser)
 	result, _ := evaluator.Evaluate()
 	fmt.Println(result)
+
 }

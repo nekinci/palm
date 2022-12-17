@@ -1,6 +1,9 @@
 package parse
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 type NodeKind int
 
@@ -18,7 +21,9 @@ const (
 	NodeEOF NodeKind = iota
 	NodeBinaryExpression
 	NodeNumber
+	NodeBoolean
 	NodeParenthesisedExpression
+	NodeUnaryExpression
 )
 
 const (
@@ -57,6 +62,46 @@ func (n *NumberNode) tree() *SyntaxTree {
 }
 
 func (n *NumberNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.Raw)
+}
+
+///////////////////////////////////////////////////////////
+
+type BooleanNode struct {
+	NodeKind
+	tr  *SyntaxTree
+	Pos int
+	Raw string
+	Val bool
+}
+
+func NewBooleanNode(tr *SyntaxTree, val bool, pos int) *BooleanNode {
+	return &BooleanNode{
+		NodeKind: NodeNumber,
+		tr:       tr,
+		Pos:      pos,
+		Raw:      strconv.FormatBool(val),
+		Val:      val,
+	}
+}
+
+func (n *BooleanNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *BooleanNode) String() string {
+	return n.Raw
+}
+
+func (n *BooleanNode) Position() int {
+	return n.Pos
+}
+
+func (n *BooleanNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *BooleanNode) writeTo(builder *strings.Builder) {
 	builder.WriteString(n.Raw)
 }
 
@@ -147,3 +192,41 @@ func (n *ParenthesisedExpressionNode) writeTo(builder *strings.Builder) {
 }
 
 ///////////////////////////////////////////////////////////
+
+type UnaryExpressionNode struct {
+	NodeKind
+	tr    *SyntaxTree
+	Pos   int
+	Op    Token
+	Right Node
+}
+
+func NewUnaryExpressionNode(tree *SyntaxTree, op Token, right Node) *UnaryExpressionNode {
+	return &UnaryExpressionNode{
+		NodeKind: NodeUnaryExpression,
+		Op:       op,
+		Right:    right,
+		tr:       tree,
+	}
+}
+
+func (n *UnaryExpressionNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *UnaryExpressionNode) String() string {
+	return n.Op.Val + n.Right.String()
+}
+
+func (n *UnaryExpressionNode) Position() int {
+	return n.Pos
+}
+
+func (n *UnaryExpressionNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *UnaryExpressionNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.Op.Val)
+	builder.WriteString(n.Right.String())
+}

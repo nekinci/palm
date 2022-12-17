@@ -9,6 +9,13 @@ import (
 // This is Rob Pike style lexer based on the state functions and the state machine.
 // I have adopted this style 'cause it's easier and more understandable and maintainable. So At least I think so.
 
+type Location struct {
+	Line  int
+	Start int
+	Len   int
+	File  string
+}
+
 type StateFn func(*Lexer) StateFn
 
 type TokenKind int
@@ -18,34 +25,67 @@ const endOfFile = -1
 const (
 	EOF TokenKind = iota // End of input
 	ERROR
-	PLUS   // +
-	MINUS  // -
-	MUL    // *
-	QUO    // /
-	REM    // %
-	LPAREN // (
-	RPAREN // )
-	NUMBER // 12345
-)
+	PLUS         // +
+	MINUS        // -
+	MUL          // *
+	QUO          // /
+	REM          // %
+	PLUS_ASSIGN  // +=
+	MINUS_ASSIGN // -=
+	MUL_ASSIGN   // *=
+	QUO_ASSIGN   // /=
+	REM_ASSIGN   // %=
+	GT           // >
+	LT           // <
+	GTE          // >=
+	LTE          // <=
+	EQ           // ==
+	NEQ          // !=
+	ASSIGN       // =
+	DECLARE      // :=
+	COLON        // :
+	BITAND       // &
+	BITOR        // |
+	AND          // &&
+	OR           // ||
+	XOR          // ^
+	LSHIFT       // <<
+	RSHIFT       // >>
+	LPAREN       // (
+	RPAREN       // )
+	NUMBER       // 12345
+	NOT          // !
+	FALSE        // false
+	TRUE         // true
 
-const (
-	lparenToken = "("
-	rparenToken = ")"
-	plusToken   = "+"
-	minusToken  = "-"
-	mulToken    = "*"
-	quoToken    = "/"
-	remToken    = "%"
 )
 
 var stringKind = map[string]TokenKind{
-	"+":         PLUS,
-	"-":         MINUS,
-	"*":         MUL,
-	"/":         QUO,
-	"%":         REM,
-	lparenToken: LPAREN,
-	rparenToken: RPAREN,
+	"+":  PLUS,
+	"-":  MINUS,
+	"*":  MUL,
+	"/":  QUO,
+	"%":  REM,
+	"(":  LPAREN,
+	")":  RPAREN,
+	"!":  NOT,
+	"==": EQ,
+	"!=": NEQ,
+	">":  GT,
+	"<":  LT,
+	">=": GTE,
+	"<=": LTE,
+	"=":  ASSIGN,
+	":=": DECLARE,
+	":":  COLON,
+	"^":  XOR,
+	"+=": PLUS_ASSIGN,
+	"-=": MINUS_ASSIGN,
+	"*=": MUL_ASSIGN,
+	"/=": QUO_ASSIGN,
+	"%=": REM_ASSIGN,
+	"<<": LSHIFT,
+	">>": RSHIFT,
 }
 
 func (k TokenKind) String() string {
@@ -79,6 +119,10 @@ func (k TokenKind) GetBinaryPrecedence() int {
 	return GetBinaryOperatorPrecedence(k)
 }
 
+func (k TokenKind) GetUnaryPrecedence() int {
+	return GetUnaryOperatorPrecedence(k)
+}
+
 type Token struct {
 	Kind TokenKind
 	Val  string
@@ -87,15 +131,25 @@ type Token struct {
 	line int
 }
 
+func (t Token) Location(fileName string) Location {
+	return Location{
+		Line:  t.line,
+		Start: t.pos,
+		Len:   t.len,
+		File:  fileName,
+	}
+}
+
 type Lexer struct {
-	name      string
-	input     string
-	start     int
-	pos       int
-	len       int
-	line      int
-	startLine int
-	tokens    chan Token
+	name       string
+	input      string
+	start      int
+	pos        int
+	len        int
+	line       int
+	startLine  int
+	tokens     chan Token
+	diagnostic Diagnostic
 }
 
 func NewLexer(name, input string) *Lexer {
@@ -173,9 +227,21 @@ func (l *Lexer) acceptRun(valid string) {
 	l.backup()
 }
 
+// acceptExact advances rune if it's equal to given input.
+func (l *Lexer) acceptExact(valid string) bool {
+	if strings.HasPrefix(l.input[l.pos:], valid) {
+		for range valid {
+			l.next()
+		}
+
+		return true
+	}
+	return false
+}
+
 func (l *Lexer) errorf(format string, args ...any) StateFn {
 	l.tokens <- Token{Kind: ERROR, Val: fmt.Sprintf(format, args), pos: l.start, len: l.line}
-	return nil
+	return lexText
 }
 
 func (l *Lexer) emit(kind TokenKind) {
@@ -184,6 +250,7 @@ func (l *Lexer) emit(kind TokenKind) {
 		Val:  l.input[l.start:l.pos],
 		pos:  l.pos,
 		line: l.startLine,
+		len:  l.pos - l.start,
 	}
 
 	l.start = l.pos
@@ -212,26 +279,44 @@ func lexText(l *Lexer) StateFn {
 		return lexWhitespace
 	case r == '(':
 		return lexLeftParen
-	case r == '+' || r == '-' || r == '*' || r == '/' || r == '%':
+	case r == '+' || r == '-' || r == '*' || r == '/' || r == '%' || r == '!' || r == '<' ||
+		r == '>' || r == '=' || r == ':' || r == '&' || r == '|' || r == '^':
 		return lexOperator
 	case r == ')':
 		return lexRightParen
 	case r >= '0' && r <= '9':
 		return lexNumber
+	// at least now we check only for t and f for true and false after that we will check for all keywords
+	case r == 't' || r == 'f':
+		return lexBoolean
 	default:
 		return l.errorf("unrecognized character in input: %q", r)
 	}
 
 }
 
+func lexBoolean(l *Lexer) StateFn {
+	if l.acceptExact("true") {
+		l.emit(TRUE)
+		return lexText
+	}
+
+	if l.acceptExact("false") {
+		l.emit(FALSE)
+		return lexText
+	}
+
+	return l.errorf("unrecognized character in input: %q", l.next())
+}
+
 func lexLeftParen(l *Lexer) StateFn {
-	l.pos += len(lparenToken)
+	l.accept("(")
 	l.emit(LPAREN)
 	return lexText
 }
 
 func lexRightParen(l *Lexer) StateFn {
-	l.pos += len(rparenToken)
+	l.accept(")")
 	l.emit(RPAREN)
 	return lexText
 }
@@ -243,8 +328,95 @@ func lexNumber(l *Lexer) StateFn {
 }
 
 func lexOperator(l *Lexer) StateFn {
-	l.acceptRun("+-*/%")
-	l.emit(stringKind[l.input[l.start:l.pos]])
+
+	if l.accept(">") {
+		if l.accept("=") {
+			l.emit(GTE)
+			return lexText
+		}
+
+		if l.accept(">") {
+			l.emit(RSHIFT)
+			return lexText
+		}
+
+		l.emit(GT)
+		return lexText
+	}
+
+	if l.accept("<") {
+		if l.accept("=") {
+			l.emit(LTE)
+			return lexText
+		}
+
+		if l.accept("<") {
+			l.emit(LSHIFT)
+			return lexText
+		}
+
+		l.emit(LT)
+		return lexText
+	}
+
+	if l.accept(":") {
+		if l.accept("=") {
+			l.emit(DECLARE)
+			return lexText
+		}
+
+		// we don't handle yet, think about it later
+		l.backup()
+	}
+
+	if l.accept("!") {
+		if l.accept("=") {
+			l.emit(NEQ)
+			return lexText
+		}
+
+		l.emit(NOT)
+		return lexText
+	}
+
+	if l.accept("&") {
+		if l.accept("&") {
+			l.emit(AND)
+			return lexText
+		}
+
+		l.emit(BITAND)
+	}
+
+	if l.accept("|") {
+		if l.accept("|") {
+			l.emit(OR)
+			return lexText
+		}
+
+		l.emit(BITOR)
+	}
+
+	if l.accept("^") {
+		l.emit(XOR)
+		return lexText
+	}
+
+	if l.accept("=") {
+		if l.accept("=") {
+			l.emit(EQ)
+			return lexText
+		}
+
+		l.emit(ASSIGN)
+		return lexText
+	}
+
+	if l.accept("+-*/%") {
+		l.accept("=")
+		l.emit(stringKind[l.input[l.start:l.pos]])
+	}
+
 	return lexText
 }
 
@@ -252,17 +424,4 @@ func lexWhitespace(l *Lexer) StateFn {
 	l.acceptRun(Whitespace)
 	l.ignore()
 	return lexText
-}
-
-func GetTokens(input string) []Token {
-	l := NewLexer("test", input)
-	var tokens []Token
-	for {
-		t := l.nextToken()
-		tokens = append(tokens, t)
-		if t.Kind == EOF {
-			break
-		}
-	}
-	return tokens
 }

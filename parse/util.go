@@ -2,12 +2,26 @@ package parse
 
 const Whitespace = " \t\r\n"
 
+func GetUnaryOperatorPrecedence(kind TokenKind) int {
+	switch kind {
+	case PLUS, MINUS, NOT:
+		return 6
+	}
+	return 0
+}
+
 func GetBinaryOperatorPrecedence(kind TokenKind) int {
 	switch kind {
 	case PLUS, MINUS:
 		return 4
-	case MUL, QUO:
+	case MUL, QUO, REM, LSHIFT, RSHIFT:
 		return 5
+	case GT, LT, GTE, LTE, NEQ, EQ:
+		return 3
+	case AND, BITAND:
+		return 2
+	case OR, BITOR, XOR:
+		return 1
 	}
 	return 0
 }
