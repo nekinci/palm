@@ -75,6 +75,7 @@ func (p *Parser) parsePrimary() Node {
 		return p.parseParenthesizedExpression()
 	case FALSE, TRUE:
 		return p.parseBoolean()
+
 	}
 
 	return nil
