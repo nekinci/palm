@@ -7,11 +7,10 @@ type SyntaxTree struct {
 }
 
 type Parser struct {
-	lexer     *Lexer
-	pos       int
-	token     Token
-	lookAhead Token
-	tree      *SyntaxTree
+	lexer  *Lexer
+	pos    int
+	tokens []Token
+	tree   *SyntaxTree
 }
 
 func NewParser(name, input string) *Parser {
@@ -20,35 +19,67 @@ func NewParser(name, input string) *Parser {
 		tree:  &SyntaxTree{},
 	}
 
-	// ignore first token because it is nil
-	_ = p.getCurrentAndNext()
 	return p
 }
 
 // getCurrentAndNext advances the lexer next token and return current token
 func (p *Parser) getCurrentAndNext() Token {
-	currentToken := p.currentToken()
-	p.token = p.lexer.nextToken()
-	return currentToken
+
+	token := p.currentToken()
+	p.pos++
+	return token
+
 }
 
 func (p *Parser) currentToken() Token {
-	return p.token
+
+	if p.pos >= len(p.tokens) {
+		p.tokens = append(p.tokens, <-p.lexer.tokens)
+	}
+
+	return p.tokens[p.pos]
+}
+
+func (p *Parser) peek(offset int) Token {
+	for len(p.tokens) <= p.pos+offset {
+		p.tokens = append(p.tokens, <-p.lexer.tokens)
+	}
+	return p.tokens[p.pos+offset]
 }
 
 func (p *Parser) Parse() (*SyntaxTree, error) {
 	t := &SyntaxTree{}
-	t.Root = p.parseExpression(0)
+	t.Root = p.parseExpression()
 	return t, nil
 }
 
-func (p *Parser) parseExpression(parentPrecedence int) Node {
+func (p *Parser) parseExpression() Node {
+	if p.currentToken().Kind == IDENT {
+		switch p.peek(1).Kind {
+		case ASSIGN:
+			return p.parseIdentifier()
+		}
+	}
+
+	return p.parseBinaryExpression(0)
+}
+
+func (p *Parser) parseIdentifier() Node {
+	left := p.getCurrentAndNext()
+	opToken := p.getCurrentAndNext()
+	right := p.parseExpression()
+
+	return NewAssignmentExpressionNode(p.tree, left, opToken, right)
+
+}
+
+func (p *Parser) parseBinaryExpression(parentPrecedence int) Node {
 	var left Node
 	unaryPrecedence := p.currentToken().Kind.GetUnaryPrecedence()
 
 	if unaryPrecedence != 0 && unaryPrecedence >= parentPrecedence {
 		token := p.getCurrentAndNext()
-		expr := p.parseExpression(unaryPrecedence)
+		expr := p.parseBinaryExpression(unaryPrecedence)
 		left = NewUnaryExpressionNode(p.tree, token, expr)
 	} else {
 		left = p.parsePrimary()
@@ -60,7 +91,7 @@ func (p *Parser) parseExpression(parentPrecedence int) Node {
 			break
 		}
 		opToken := p.getCurrentAndNext()
-		right := p.parseExpression(precedence)
+		right := p.parseBinaryExpression(precedence)
 		left = NewBinaryExpressionNode(p.tree, left, opToken, right)
 	}
 
@@ -75,15 +106,25 @@ func (p *Parser) parsePrimary() Node {
 		return p.parseParenthesizedExpression()
 	case FALSE, TRUE:
 		return p.parseBoolean()
-
+	case IDENT:
+		return p.parseIdentifierAccessOrCall()
 	}
 
 	return nil
 }
 
+func (p *Parser) parseIdentifierAccessOrCall() Node {
+	ident := p.getCurrentAndNext()
+	if p.currentToken().Kind == LPAREN {
+		// return p.parseCall(ident)
+	}
+
+	return NewIdentifierAccessExpressionNode(p.tree, ident)
+}
+
 func (p *Parser) parseParenthesizedExpression() Node {
 	openParenthesisToken := p.getCurrentAndNext()
-	expr := p.parseExpression(0)
+	expr := p.parseBinaryExpression(0)
 	if p.currentToken().Kind != RPAREN {
 		return nil
 	}

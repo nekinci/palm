@@ -3,6 +3,7 @@ package parse
 import (
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -57,7 +58,7 @@ const (
 	NOT          // !
 	FALSE        // false
 	TRUE         // true
-
+	IDENT        // main
 )
 
 var stringKind = map[string]TokenKind{
@@ -227,6 +228,13 @@ func (l *Lexer) acceptRun(valid string) {
 	l.backup()
 }
 
+func (l *Lexer) acceptRunFunc(f func(rune) bool) {
+	for f(l.next()) {
+
+	}
+	l.backup()
+}
+
 // acceptExact advances rune if it's equal to given input.
 func (l *Lexer) acceptExact(valid string) bool {
 	if strings.HasPrefix(l.input[l.pos:], valid) {
@@ -286,27 +294,29 @@ func lexText(l *Lexer) StateFn {
 		return lexRightParen
 	case r >= '0' && r <= '9':
 		return lexNumber
-	// at least now we check only for t and f for true and false after that we will check for all keywords
-	case r == 't' || r == 'f':
-		return lexBoolean
 	default:
-		return l.errorf("unrecognized character in input: %q", r)
+		return lexIdentifierOrKeyword
+		//return l.errorf("unrecognized character in input: %q", r)
 	}
 
 }
 
-func lexBoolean(l *Lexer) StateFn {
-	if l.acceptExact("true") {
+func lexIdentifierOrKeyword(l *Lexer) StateFn {
+	l.acceptRunFunc(unicode.IsLetter)
+	tok := l.input[l.start:l.pos]
+
+	if tok == "true" {
 		l.emit(TRUE)
 		return lexText
 	}
 
-	if l.acceptExact("false") {
+	if tok == "false" {
 		l.emit(FALSE)
 		return lexText
 	}
 
-	return l.errorf("unrecognized character in input: %q", l.next())
+	l.emit(IDENT)
+	return lexText
 }
 
 func lexLeftParen(l *Lexer) StateFn {

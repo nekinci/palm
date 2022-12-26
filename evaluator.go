@@ -1,17 +1,25 @@
 package main
 
 import (
+	"fmt"
 	"myProgrammingLanguage/parse"
 )
 
 type Evaluator struct {
-	p    *parse.Parser
-	tree *parse.SyntaxTree
+	tree  *parse.SyntaxTree
+	scope *parse.Scope
 }
 
-func NewEvaluator(p *parse.Parser) *Evaluator {
-	e := Evaluator{p: p}
-	e.tree, _ = p.Parse()
+func (e *Evaluator) popScope() {
+	e.scope = e.scope.Parent()
+}
+
+func (e *Evaluator) pushScope() {
+	e.scope = parse.NewScope(e.scope)
+}
+
+func NewEvaluator(tree *parse.SyntaxTree, scope *parse.Scope) *Evaluator {
+	e := Evaluator{tree: tree, scope: scope}
 	return &e
 }
 
@@ -31,6 +39,10 @@ func (e *Evaluator) visitNode(node parse.Node) (interface{}, error) {
 		return e.visitNode(node.(*parse.ParenthesisedExpressionNode).Expression)
 	case parse.NodeUnaryExpression:
 		return e.visitUnaryExpressionNode(node.(*parse.UnaryExpressionNode))
+	case parse.NodeAssignmentExpression:
+		return e.visitAssignmentExpression(node.(*parse.AssignmentExpressionNode))
+	case parse.NodeIdentifierAccessExpression:
+		return e.visitIdentifierAccessExpression(node.(*parse.IdentifierAccessExpressionNode))
 	}
 	return nil, nil
 }
@@ -44,6 +56,7 @@ func (e *Evaluator) visitBooleanNode(node *parse.BooleanNode) bool {
 }
 
 func (e *Evaluator) visitBinaryExpressionNode(node *parse.BinaryExpressionNode) (interface{}, error) {
+
 	left, err := e.visitNode(node.Left)
 	if err != nil {
 		return nil, err
@@ -125,4 +138,22 @@ func (e *Evaluator) visitUnaryExpressionNode(node *parse.UnaryExpressionNode) (i
 	}
 
 	return nil, nil
+}
+
+func (e *Evaluator) visitAssignmentExpression(node *parse.AssignmentExpressionNode) (interface{}, error) {
+	val, err := e.visitNode(node.Right)
+	if err != nil {
+		return nil, err
+	}
+	e.scope.Define(node.Identifier.Val, node.Right)
+	return val, nil
+}
+
+func (e *Evaluator) visitIdentifierAccessExpression(node *parse.IdentifierAccessExpressionNode) (interface{}, error) {
+	val, ok := e.scope.Resolve(node.Identifier.Val)
+	if !ok {
+		return nil, fmt.Errorf("undefined variable %s", node.Identifier.Val)
+	}
+
+	return e.visitNode(val)
 }
