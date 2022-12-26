@@ -24,6 +24,8 @@ const (
 	NodeBoolean
 	NodeParenthesisedExpression
 	NodeUnaryExpression
+	NodeAssignmentExpression
+	NodeIdentifierAccessExpression
 )
 
 const (
@@ -230,3 +232,85 @@ func (n *UnaryExpressionNode) writeTo(builder *strings.Builder) {
 	builder.WriteString(n.Op.Val)
 	builder.WriteString(n.Right.String())
 }
+
+///////////////////////////////////////////////////////////
+
+type AssignmentExpressionNode struct {
+	NodeKind
+	tr         *SyntaxTree
+	Pos        int
+	Identifier Token
+	Op         Token
+	Right      Node
+}
+
+func NewAssignmentExpressionNode(tree *SyntaxTree, identifier Token, op Token, right Node) *AssignmentExpressionNode {
+	return &AssignmentExpressionNode{
+		NodeKind:   NodeAssignmentExpression,
+		Identifier: identifier,
+		Op:         op,
+		Right:      right,
+		tr:         tree,
+	}
+}
+
+func (n *AssignmentExpressionNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *AssignmentExpressionNode) String() string {
+	return n.Identifier.Val + n.Op.Val + n.Right.String()
+}
+
+func (n *AssignmentExpressionNode) Position() int {
+	return n.Pos
+}
+
+func (n *AssignmentExpressionNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *AssignmentExpressionNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.Identifier.Val)
+	builder.WriteString(n.Op.Val)
+	builder.WriteString(n.Right.String())
+}
+
+///////////////////////////////////////////////////////////
+
+type IdentifierAccessExpressionNode struct {
+	NodeKind
+	tr         *SyntaxTree
+	Pos        int
+	Identifier Token
+}
+
+func NewIdentifierAccessExpressionNode(tree *SyntaxTree, identifier Token) *IdentifierAccessExpressionNode {
+	return &IdentifierAccessExpressionNode{
+		NodeKind:   NodeIdentifierAccessExpression,
+		Identifier: identifier,
+		tr:         tree,
+	}
+}
+
+func (n *IdentifierAccessExpressionNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *IdentifierAccessExpressionNode) String() string {
+	return n.Identifier.Val
+}
+
+func (n *IdentifierAccessExpressionNode) Position() int {
+	return n.Pos
+}
+
+func (n *IdentifierAccessExpressionNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *IdentifierAccessExpressionNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.Identifier.Val)
+}
+
+///////////////////////////////////////////////////////////
