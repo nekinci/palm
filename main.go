@@ -26,7 +26,11 @@ func repl() {
 		parser := parse.NewParser("repl", text)
 		tree, _ := parser.Parse()
 		evaluator := NewEvaluator(tree, scope)
-		result, _ := evaluator.Evaluate()
-		fmt.Println(result)
+		result, err := evaluator.Evaluate()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(result)
+		}
 	}
 }

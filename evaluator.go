@@ -18,6 +18,18 @@ func (e *Evaluator) pushScope() {
 	e.scope = parse.NewScope(e.scope)
 }
 
+func (e *Evaluator) peekScope(parentStep int) *parse.Scope {
+	scope := e.scope
+	for i := 0; i < parentStep; i++ {
+		if scope.Parent() == nil {
+			scope = scope.Parent()
+		} else {
+			break
+		}
+	}
+	return scope
+}
+
 func NewEvaluator(tree *parse.SyntaxTree, scope *parse.Scope) *Evaluator {
 	e := Evaluator{tree: tree, scope: scope}
 	return &e
@@ -141,12 +153,57 @@ func (e *Evaluator) visitUnaryExpressionNode(node *parse.UnaryExpressionNode) (i
 }
 
 func (e *Evaluator) visitAssignmentExpression(node *parse.AssignmentExpressionNode) (interface{}, error) {
-	val, err := e.visitNode(node.Right)
-	if err != nil {
-		return nil, err
+	resolvedVal, ok := e.scope.Resolve(node.Identifier.Val)
+
+	switch node.Op.Kind {
+	case parse.ASSIGN:
+		val, err := e.visitNode(node.Right)
+		if err != nil {
+			return nil, err
+		}
+		e.scope.Define(node.Identifier.Val, val)
+		return val, nil
+	case parse.DECLARE:
+		if ok {
+			return nil, fmt.Errorf("variable %s already defined", node.Identifier.Val)
+		}
+		val, err := e.visitNode(node.Right)
+		e.scope.Define(node.Identifier.Val, val)
+		return val, err
+	case parse.PLUS_ASSIGN, parse.MINUS_ASSIGN, parse.MUL_ASSIGN, parse.QUO_ASSIGN, parse.REM_ASSIGN:
+		if !ok {
+			return nil, fmt.Errorf("variable %s not defined", node.Identifier.Val)
+		}
+		val, err := e.visitNode(node.Right)
+		if err != nil {
+			return nil, err
+		}
+
+		var result int64
+		if resolvedValInt, ok := resolvedVal.(int64); ok {
+			if resolvedVal != nil {
+				switch node.Op.Kind {
+				case parse.PLUS_ASSIGN:
+					result = resolvedValInt + val.(int64)
+				case parse.MINUS_ASSIGN:
+					result = resolvedValInt - val.(int64)
+				case parse.MUL_ASSIGN:
+					result = resolvedValInt * val.(int64)
+				case parse.QUO_ASSIGN:
+					result = resolvedValInt / val.(int64)
+				case parse.REM_ASSIGN:
+					result = resolvedValInt % val.(int64)
+				}
+			}
+		} else {
+			return nil, fmt.Errorf("variable %s is not an integer", node.Identifier.Val)
+		}
+
+		e.scope.Define(node.Identifier.Val, result)
+		return result, nil
+
 	}
-	e.scope.Define(node.Identifier.Val, node.Right)
-	return val, nil
+	return nil, nil
 }
 
 func (e *Evaluator) visitIdentifierAccessExpression(node *parse.IdentifierAccessExpressionNode) (interface{}, error) {
@@ -155,5 +212,7 @@ func (e *Evaluator) visitIdentifierAccessExpression(node *parse.IdentifierAccess
 		return nil, fmt.Errorf("undefined variable %s", node.Identifier.Val)
 	}
 
-	return e.visitNode(val)
+	return val, nil
 }
+
+//////
