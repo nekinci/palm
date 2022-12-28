@@ -56,7 +56,7 @@ func (p *Parser) Parse() (*SyntaxTree, error) {
 func (p *Parser) parseExpression() Node {
 	if p.currentToken().Kind == IDENT {
 		switch p.peek(1).Kind {
-		case ASSIGN:
+		case ASSIGN, DECLARE, PLUS_ASSIGN, MINUS_ASSIGN, MUL_ASSIGN, QUO_ASSIGN, REM_ASSIGN:
 			return p.parseIdentifier()
 		}
 	}
