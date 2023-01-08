@@ -20,6 +20,11 @@ func (s *Scope) Resolve(name string) (any, bool) {
 	return val, ok
 }
 
+func (s *Scope) ResolveLocal(name string) (any, bool) {
+	val, ok := s.variables[name]
+	return val, ok
+}
+
 func (s *Scope) Define(name string, val any) {
 	s.variables[name] = val
 }
