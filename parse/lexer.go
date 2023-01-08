@@ -10,13 +10,6 @@ import (
 // This is Rob Pike style lexer based on the state functions and the state machine.
 // I have adopted this style 'cause it's easier and more understandable and maintainable. So At least I think so.
 
-type Location struct {
-	Line  int
-	Start int
-	Len   int
-	File  string
-}
-
 type StateFn func(*Lexer) StateFn
 
 type TokenKind int
@@ -25,7 +18,9 @@ const endOfFile = -1
 
 const (
 	EOF TokenKind = iota // End of input
-	ERROR
+	BADTOKEN
+	UNEXPECTED   // Unexpected token
+	EMPTY        // Empty token means that there is no token
 	PLUS         // +
 	MINUS        // -
 	MUL          // *
@@ -59,7 +54,19 @@ const (
 	FALSE        // false
 	TRUE         // true
 	IDENT        // main
+	INT          // int
+	IF           // if
+	ELSE         // else
+	LBRACE       // {
+	RBRACE       // }
+	BOOL         // bool
 )
+
+var emptyToken = Token{
+	Kind: EMPTY,
+	Val:  "",
+	len:  0,
+}
 
 var stringKind = map[string]TokenKind{
 	"+":  PLUS,
@@ -93,8 +100,8 @@ func (k TokenKind) String() string {
 	switch k {
 	case EOF:
 		return "EOF"
-	case ERROR:
-		return "ERROR"
+	case BADTOKEN:
+		return "BADTOKEN"
 	case PLUS:
 		return "PLUS"
 	case MINUS:
@@ -111,8 +118,62 @@ func (k TokenKind) String() string {
 		return "RPAREN"
 	case NUMBER:
 		return "NUMBER"
+	case NOT:
+		return "NOT"
+	case EQ:
+		return "EQ"
+	case NEQ:
+		return "NEQ"
+	case GT:
+		return "GT"
+	case LT:
+		return "LT"
+	case GTE:
+		return "GTE"
+	case LTE:
+		return "LTE"
+	case ASSIGN:
+		return "ASSIGN"
+	case DECLARE:
+		return "DECLARE"
+	case COLON:
+		return "COLON"
+	case XOR:
+		return "XOR"
+	case PLUS_ASSIGN:
+		return "PLUS_ASSIGN"
+	case MINUS_ASSIGN:
+		return "MINUS_ASSIGN"
+	case MUL_ASSIGN:
+		return "MUL_ASSIGN"
+	case QUO_ASSIGN:
+		return "QUO_ASSIGN"
+	case REM_ASSIGN:
+		return "REM_ASSIGN"
+	case LSHIFT:
+		return "LSHIFT"
+	case RSHIFT:
+		return "RSHIFT"
+	case IDENT:
+		return "IDENT"
+	case FALSE:
+		return "FALSE"
+	case TRUE:
+		return "TRUE"
+	case INT:
+		return "INT"
+	case IF:
+		return "IF"
+	case ELSE:
+		return "ELSE"
+	case LBRACE:
+		return "LBRACE"
+	case RBRACE:
+		return "RBRACE"
+	case BOOL:
+		return "BOOL"
 	default:
-		return "UNKNOWN"
+		panic(fmt.Sprintf("unknown token kind: %d", k))
 	}
 }
 
@@ -124,63 +185,99 @@ func (k TokenKind) GetUnaryPrecedence() int {
 	return GetUnaryOperatorPrecedence(k)
 }
 
+type TokenLocation struct {
+	Start Location
+	End   Location
+}
+
+type Location struct {
+	Offset   int
+	Line     int
+	Col      int
+	Filename string
+}
+
+func (l Location) String() string {
+	return fmt.Sprintf("Location(Filename = %s, Line = %d, Column = %d, Offset = %d)", l.Filename, l.Line, l.Col, l.Offset)
+}
+
 type Token struct {
 	Kind TokenKind
 	Val  string
-	pos  int
 	len  int
-	line int
+	Loc  TokenLocation
 }
 
-func (t Token) Location(fileName string) Location {
-	return Location{
-		Line:  t.line,
-		Start: t.pos,
-		Len:   t.len,
-		File:  fileName,
-	}
+func (t Token) String() string {
+	return fmt.Sprintf("Token(%s, %s)", t.Kind, t.Val)
 }
 
 type Lexer struct {
-	name       string
-	input      string
-	start      int
-	pos        int
-	len        int
-	line       int
-	startLine  int
-	tokens     chan Token
-	diagnostic Diagnostic
+	name          string
+	input         string
+	startOffset   int
+	offset        int
+	startLineCols map[int]int
+	lineCols      map[int]int
+	len           int
+	line          int
+	startLine     int
+	tokens        chan Token
+	errors        chan Err
+	doneErr       chan bool
 }
 
 func NewLexer(name, input string) *Lexer {
 	l := &Lexer{
-		name:   name,
-		input:  input,
-		tokens: make(chan Token),
+		name:          name,
+		input:         input,
+		tokens:        make(chan Token),
+		lineCols:      make(map[int]int),
+		startLineCols: make(map[int]int),
+		errors:        make(chan Err),
+		doneErr:       make(chan bool),
 	}
 	go l.run()
 	return l
+}
+
+func (l *Lexer) loc() TokenLocation {
+	return TokenLocation{
+		Start: Location{
+			Offset:   l.startOffset,
+			Line:     l.startLine,
+			Filename: l.name,
+			Col:      l.startLineCols[l.startLine],
+		},
+		End: Location{
+			Offset:   l.offset,
+			Line:     l.line,
+			Filename: l.name,
+			Col:      l.lineCols[l.line],
+		},
+	}
 }
 
 func (l *Lexer) run() {
 	for state := lexText; state != nil; {
 		state = state(l)
 	}
+	l.doneErr <- true
+	close(l.errors)
 	close(l.tokens)
 }
 
 // Next returns the next rune in the input
 func (l *Lexer) next() rune {
-	if l.pos >= len(l.input) {
+	if l.offset >= len(l.input) {
 		l.len = 0
 		return endOfFile
 	}
-	r, w := utf8.DecodeRuneInString(l.input[l.pos:])
-	// set length of new next rune that readen from input by old pos
+	r, w := utf8.DecodeRuneInString(l.input[l.offset:])
+	// set length of new next rune that readen from input by old offset
 	l.len = w
-	l.pos += l.len
-
+	l.offset += l.len
+	l.lineCols[l.line] += l.len
 	if r == '\n' {
 		l.line++
 	}
@@ -190,9 +287,11 @@ func (l *Lexer) next() rune {
 
 // Backup recover to back step
 func (l *Lexer) backup() {
-	l.pos -= l.len
-	if l.len == 1 && l.input[l.pos] == '\n' {
+	l.offset -= l.len
+	if l.len == 1 && l.input[l.offset] == '\n' {
 		l.line--
+	} else {
+		l.lineCols[l.line] -= l.len
 	}
 }
 
@@ -204,8 +303,9 @@ func (l *Lexer) peek() rune {
 
 // ignore ignores some input like whitespaces.
 func (l *Lexer) ignore() {
-	l.line += strings.Count(l.input[l.start:l.pos], "\n")
-	l.start = l.pos
+	// l.line += strings.Count(l.input[l.startOffset:l.offset], "\n")
+	l.startOffset = l.offset
+	l.startLineCols[l.line] = l.lineCols[l.line]
 	l.startLine = l.line
 
 }
@@ -237,7 +337,7 @@ func (l *Lexer) acceptRunFunc(f func(rune) bool) {
 
 // acceptExact advances rune if it's equal to given input.
 func (l *Lexer) acceptExact(valid string) bool {
-	if strings.HasPrefix(l.input[l.pos:], valid) {
+	if strings.HasPrefix(l.input[l.offset:], valid) {
 		for range valid {
 			l.next()
 		}
@@ -247,22 +347,30 @@ func (l *Lexer) acceptExact(valid string) bool {
 	return false
 }
 
-func (l *Lexer) errorf(format string, args ...any) StateFn {
-	l.tokens <- Token{Kind: ERROR, Val: fmt.Sprintf(format, args), pos: l.start, len: l.line}
+func (l *Lexer) errorf(kind TokenKind, format string, args ...any) StateFn {
+	l.emit(kind)
+	l.errors <- Err{
+		Kind: Error,
+		Len:  l.len,
+		Msg:  fmt.Sprintf(format, args...),
+		File: l.name,
+		Loc:  l.loc(),
+	}
+	l.next()
 	return lexText
 }
 
 func (l *Lexer) emit(kind TokenKind) {
 	l.tokens <- Token{
 		Kind: kind,
-		Val:  l.input[l.start:l.pos],
-		pos:  l.pos,
-		line: l.startLine,
-		len:  l.pos - l.start,
+		Val:  l.input[l.startOffset:l.offset],
+		len:  l.offset - l.startOffset,
+		Loc:  l.loc(),
 	}
 
-	l.start = l.pos
+	l.startOffset = l.offset
 	l.startLine = l.line
+	l.startLineCols[l.line] = l.lineCols[l.line]
 }
 
 func (l *Lexer) nextToken() Token {
@@ -274,7 +382,7 @@ func (l *Lexer) nextToken() Token {
 func lexText(l *Lexer) StateFn {
 	l.len = 0
 
-	if l.pos >= len(l.input) {
+	if l.offset >= len(l.input) {
 		l.emit(EOF)
 		return nil
 	}
@@ -294,16 +402,34 @@ func lexText(l *Lexer) StateFn {
 		return lexRightParen
 	case r >= '0' && r <= '9':
 		return lexNumber
+	case r == '{':
+		return lexLeftBrace
+	case r == '}':
+		return lexRightBrace
 	default:
-		return lexIdentifierOrKeyword
-		//return l.errorf("unrecognized character in input: %q", r)
+		if unicode.IsLetter(r) {
+			return lexIdentifierOrKeyword
+		}
+		return l.errorf(BADTOKEN, "unrecognized character in input: %q", r)
 	}
 
 }
 
+func lexLeftBrace(l *Lexer) StateFn {
+	l.next()
+	l.emit(LBRACE)
+	return lexText
+}
+
+func lexRightBrace(l *Lexer) StateFn {
+	l.next()
+	l.emit(RBRACE)
+	return lexText
+}
+
 func lexIdentifierOrKeyword(l *Lexer) StateFn {
 	l.acceptRunFunc(unicode.IsLetter)
-	tok := l.input[l.start:l.pos]
+	tok := l.input[l.startOffset:l.offset]
 
 	if tok == "true" {
 		l.emit(TRUE)
@@ -312,6 +438,26 @@ func lexIdentifierOrKeyword(l *Lexer) StateFn {
 
 	if tok == "false" {
 		l.emit(FALSE)
+		return lexText
+	}
+
+	if tok == "if" {
+		l.emit(IF)
+		return lexText
+	}
+
+	if tok == "else" {
+		l.emit(ELSE)
+		return lexText
+	}
+
+	if tok == "int" {
+		l.emit(INT)
+		return lexText
+	}
+
+	if tok == "bool" {
+		l.emit(BOOL)
 		return lexText
 	}
 
@@ -424,7 +570,7 @@ func lexOperator(l *Lexer) StateFn {
 
 	if l.accept("+-*/%") {
 		l.accept("=")
-		l.emit(stringKind[l.input[l.start:l.pos]])
+		l.emit(stringKind[l.input[l.startOffset:l.offset]])
 	}
 
 	return lexText

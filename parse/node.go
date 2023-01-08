@@ -25,7 +25,11 @@ const (
 	NodeParenthesisedExpression
 	NodeUnaryExpression
 	NodeAssignmentExpression
-	NodeIdentifierAccessExpression
+	NodeCallExpression
+	NodeIfStatement
+	NodeElseStatement
+	NodeBlockStatement
+	NodeVariableDeclaration
 )
 
 const (
@@ -239,14 +243,16 @@ type AssignmentExpressionNode struct {
 	NodeKind
 	tr         *SyntaxTree
 	Pos        int
+	TypeToken  Token
 	Identifier Token
 	Op         Token
 	Right      Node
 }
 
-func NewAssignmentExpressionNode(tree *SyntaxTree, identifier Token, op Token, right Node) *AssignmentExpressionNode {
+func NewAssignmentExpressionNode(tree *SyntaxTree, typeToken Token, identifier Token, op Token, right Node) *AssignmentExpressionNode {
 	return &AssignmentExpressionNode{
 		NodeKind:   NodeAssignmentExpression,
+		TypeToken:  typeToken,
 		Identifier: identifier,
 		Op:         op,
 		Right:      right,
@@ -278,39 +284,231 @@ func (n *AssignmentExpressionNode) writeTo(builder *strings.Builder) {
 
 ///////////////////////////////////////////////////////////
 
-type IdentifierAccessExpressionNode struct {
+type CallExpressionNode struct {
 	NodeKind
 	tr         *SyntaxTree
 	Pos        int
 	Identifier Token
 }
 
-func NewIdentifierAccessExpressionNode(tree *SyntaxTree, identifier Token) *IdentifierAccessExpressionNode {
-	return &IdentifierAccessExpressionNode{
-		NodeKind:   NodeIdentifierAccessExpression,
+func NewCallExpressionNode(tree *SyntaxTree, identifier Token) *CallExpressionNode {
+	return &CallExpressionNode{
+		NodeKind:   NodeCallExpression,
 		Identifier: identifier,
 		tr:         tree,
 	}
 }
 
-func (n *IdentifierAccessExpressionNode) Kind() NodeKind {
+func (n *CallExpressionNode) Kind() NodeKind {
 	return n.NodeKind
 }
 
-func (n *IdentifierAccessExpressionNode) String() string {
+func (n *CallExpressionNode) String() string {
 	return n.Identifier.Val
 }
 
-func (n *IdentifierAccessExpressionNode) Position() int {
+func (n *CallExpressionNode) Position() int {
 	return n.Pos
 }
 
-func (n *IdentifierAccessExpressionNode) tree() *SyntaxTree {
+func (n *CallExpressionNode) tree() *SyntaxTree {
 	return n.tr
 }
 
-func (n *IdentifierAccessExpressionNode) writeTo(builder *strings.Builder) {
+func (n *CallExpressionNode) writeTo(builder *strings.Builder) {
 	builder.WriteString(n.Identifier.Val)
+}
+
+///////////////////////////////////////////////////////////
+
+type BlockStatementNode struct {
+	NodeKind
+	tr    *SyntaxTree
+	Pos   int
+	Left  Token
+	Right Token
+	Nodes []Node
+}
+
+func NewBlockStatementNode(tree *SyntaxTree, left Token, right Token, nodes []Node) *BlockStatementNode {
+	return &BlockStatementNode{
+		NodeKind: NodeBlockStatement,
+		Left:     left,
+		Right:    right,
+		Nodes:    nodes,
+		tr:       tree,
+	}
+}
+
+func (n *BlockStatementNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *BlockStatementNode) String() string {
+	// Think about this should we return with the nodes or not?
+	return n.Left.Val + n.Right.Val
+}
+
+func (n *BlockStatementNode) Position() int {
+	return n.Pos
+}
+
+func (n *BlockStatementNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *BlockStatementNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.Left.Val)
+	for _, node := range n.Nodes {
+		builder.WriteString(node.String())
+	}
+	builder.WriteString(n.Right.Val)
+}
+
+///////////////////////////////////////////////////////////
+
+type IfStatementNode struct {
+	NodeKind
+	tr         *SyntaxTree
+	Pos        int
+	IfToken    Token
+	Expression Node
+	Body       Node
+	Else       Node
+}
+
+func NewIfStatementNode(tree *SyntaxTree, ifToken Token, expression Node, body Node, elseNode Node) *IfStatementNode {
+	return &IfStatementNode{
+		NodeKind:   NodeIfStatement,
+		IfToken:    ifToken,
+		Expression: expression,
+		Body:       body,
+		Else:       elseNode,
+		tr:         tree,
+	}
+}
+
+func (n *IfStatementNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *IfStatementNode) String() string {
+	return n.IfToken.Val + n.Expression.String() + n.Body.String()
+}
+
+func (n *IfStatementNode) Position() int {
+	return n.Pos
+}
+
+func (n *IfStatementNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *IfStatementNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.IfToken.Val)
+	builder.WriteString(n.Expression.String())
+	builder.WriteString(n.Body.String())
+	if n.Else != nil {
+		builder.WriteString(n.Else.String())
+	}
+}
+
+///////////////////////////////////////////////////////////
+
+type ElseStatementNode struct {
+	NodeKind
+	tr   *SyntaxTree
+	Pos  int
+	Else Token
+	Body Node
+}
+
+func NewElseStatementNode(tree *SyntaxTree, elseToken Token, body Node) *ElseStatementNode {
+	return &ElseStatementNode{
+		NodeKind: NodeElseStatement,
+		Else:     elseToken,
+		Body:     body,
+		tr:       tree,
+	}
+}
+
+func (n *ElseStatementNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *ElseStatementNode) String() string {
+	return n.Else.Val + n.Body.String()
+}
+
+func (n *ElseStatementNode) Position() int {
+	return n.Pos
+}
+
+func (n *ElseStatementNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *ElseStatementNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.Else.Val)
+	builder.WriteString(n.Body.String())
+}
+
+///////////////////////////////////////////////////////////
+
+type VariableDeclarationStatementNode struct {
+	NodeKind
+	tr           *SyntaxTree
+	Pos          int
+	TypeToken    Token
+	DeclareToken Token
+	HasTypeToken bool
+	Identifier   Token
+	Expression   Node
+}
+
+func NewVariableDeclarationNode(tree *SyntaxTree, typeToken *Token, identifier Token, declareToken Token, expression Node) *VariableDeclarationStatementNode {
+
+	hasTypeToken := false
+	if typeToken != nil {
+		hasTypeToken = true
+	}
+
+	node := &VariableDeclarationStatementNode{
+		NodeKind:     NodeVariableDeclaration,
+		HasTypeToken: hasTypeToken,
+		Identifier:   identifier,
+		Expression:   expression,
+		DeclareToken: declareToken,
+		tr:           tree,
+	}
+
+	if hasTypeToken {
+		node.TypeToken = *typeToken
+	}
+
+	return node
+}
+
+func (n *VariableDeclarationStatementNode) Kind() NodeKind {
+	return n.NodeKind
+}
+
+func (n *VariableDeclarationStatementNode) String() string {
+	return n.TypeToken.Val + n.Identifier.Val + n.Expression.String()
+}
+
+func (n *VariableDeclarationStatementNode) Position() int {
+	return n.Pos
+}
+
+func (n *VariableDeclarationStatementNode) tree() *SyntaxTree {
+	return n.tr
+}
+
+func (n *VariableDeclarationStatementNode) writeTo(builder *strings.Builder) {
+	builder.WriteString(n.TypeToken.Val)
+	builder.WriteString(n.Identifier.Val)
+	builder.WriteString(n.Expression.String())
 }
 
 ///////////////////////////////////////////////////////////

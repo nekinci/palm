@@ -33,3 +33,10 @@ func isDigit(c byte) bool {
 func isWhitespace(ch rune) bool {
 	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
 }
+
+func getMapValueOrDefineAndGetValue(m map[int]int, key int) interface{} {
+	if _, ok := m[key]; !ok {
+		m[key] = 0
+	}
+	return m[key]
+}

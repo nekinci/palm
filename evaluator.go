@@ -18,6 +18,7 @@ func (e *Evaluator) pushScope() {
 	e.scope = parse.NewScope(e.scope)
 }
 
+// peekScope looks up the scope chain for the given parentStep if it is not fount returns top level
 func (e *Evaluator) peekScope(parentStep int) *parse.Scope {
 	scope := e.scope
 	for i := 0; i < parentStep; i++ {
@@ -36,11 +37,23 @@ func NewEvaluator(tree *parse.SyntaxTree, scope *parse.Scope) *Evaluator {
 }
 
 func (e *Evaluator) Evaluate() (interface{}, error) {
+	if e.tree == nil || e.tree.Root == nil {
+		return nil, nil
+	}
+
 	return e.visitNode(e.tree.Root)
 }
 
 func (e *Evaluator) visitNode(node parse.Node) (interface{}, error) {
 	switch node.Kind() {
+	case parse.NodeBlockStatement:
+		return e.visitBlockStatementNode(node.(*parse.BlockStatementNode))
+	case parse.NodeIfStatement:
+		return e.visitIfStatementNode(node.(*parse.IfStatementNode))
+	case parse.NodeElseStatement:
+		return e.visitElseStatementNode(node.(*parse.ElseStatementNode))
+	case parse.NodeVariableDeclaration:
+		return e.visitVariableDeclarationNode(node.(*parse.VariableDeclarationStatementNode))
 	case parse.NodeNumber:
 		return e.visitNumberNode(node.(*parse.NumberNode)), nil
 	case parse.NodeBoolean:
@@ -52,9 +65,9 @@ func (e *Evaluator) visitNode(node parse.Node) (interface{}, error) {
 	case parse.NodeUnaryExpression:
 		return e.visitUnaryExpressionNode(node.(*parse.UnaryExpressionNode))
 	case parse.NodeAssignmentExpression:
-		return e.visitAssignmentExpression(node.(*parse.AssignmentExpressionNode))
-	case parse.NodeIdentifierAccessExpression:
-		return e.visitIdentifierAccessExpression(node.(*parse.IdentifierAccessExpressionNode))
+		return e.visitAssignmentExpressionNode(node.(*parse.AssignmentExpressionNode))
+	case parse.NodeCallExpression:
+		return e.visitIdentifierAccessExpressionNode(node.(*parse.CallExpressionNode))
 	}
 	return nil, nil
 }
@@ -152,21 +165,17 @@ func (e *Evaluator) visitUnaryExpressionNode(node *parse.UnaryExpressionNode) (i
 	return nil, nil
 }
 
-func (e *Evaluator) visitAssignmentExpression(node *parse.AssignmentExpressionNode) (interface{}, error) {
+func (e *Evaluator) visitAssignmentExpressionNode(node *parse.AssignmentExpressionNode) (interface{}, error) {
 	resolvedVal, ok := e.scope.Resolve(node.Identifier.Val)
 
 	switch node.Op.Kind {
 	case parse.ASSIGN:
-		val, err := e.visitNode(node.Right)
-		if err != nil {
-			return nil, err
-		}
-		e.scope.Define(node.Identifier.Val, val)
-		return val, nil
-	case parse.DECLARE:
-		if ok {
-			return nil, fmt.Errorf("variable %s already defined", node.Identifier.Val)
-		}
+
+		// for repl, it is no necessary to check if the variable is declared
+		//if !ok {
+		//	return nil, fmt.Errorf("identifier %s not found", node.Identifier.Val)
+		//}
+
 		val, err := e.visitNode(node.Right)
 		e.scope.Define(node.Identifier.Val, val)
 		return val, err
@@ -206,13 +215,80 @@ func (e *Evaluator) visitAssignmentExpression(node *parse.AssignmentExpressionNo
 	return nil, nil
 }
 
-func (e *Evaluator) visitIdentifierAccessExpression(node *parse.IdentifierAccessExpressionNode) (interface{}, error) {
+func (e *Evaluator) visitIdentifierAccessExpressionNode(node *parse.CallExpressionNode) (interface{}, error) {
 	val, ok := e.scope.Resolve(node.Identifier.Val)
 	if !ok {
-		return nil, fmt.Errorf("undefined variable %s", node.Identifier.Val)
+		return nil, fmt.Errorf("%d:%d undefined variable %s", node.Identifier.Val)
 	}
 
 	return val, nil
 }
 
 //////
+
+func (e *Evaluator) visitIfStatementNode(node *parse.IfStatementNode) (interface{}, error) {
+	condition, err := e.visitNode(node.Expression)
+	if err != nil {
+		return nil, err
+	}
+
+	if condition.(bool) {
+		return e.visitNode(node.Body)
+	} else if node.Else != nil {
+		return e.visitNode(node.Else)
+	}
+
+	return nil, nil
+}
+
+func (e *Evaluator) visitElseStatementNode(node *parse.ElseStatementNode) (interface{}, error) {
+	return e.visitNode(node.Body)
+}
+
+func (e *Evaluator) visitBlockStatementNode(node *parse.BlockStatementNode) (interface{}, error) {
+	e.pushScope()
+	var response any
+	for _, statement := range node.Nodes {
+		val, err := e.visitNode(statement)
+		if err != nil {
+			return nil, err
+		}
+		response = val
+	}
+
+	e.popScope()
+	return response, nil
+}
+
+func (e *Evaluator) visitVariableDeclarationNode(node *parse.VariableDeclarationStatementNode) (interface{}, error) {
+	var val interface{}
+	var err error
+	if node.Expression != nil {
+		val, err = e.visitNode(node.Expression)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if _, ok := e.scope.ResolveLocal(node.Identifier.Val); ok {
+		return nil, fmt.Errorf("variable %s already defined", node.Identifier.Val)
+	}
+
+	if node.HasTypeToken {
+		// if the type is specified, check if the value is of that type
+		if node.TypeToken.Val == "int" {
+			if _, ok := val.(int64); !ok {
+				return nil, fmt.Errorf("variable %s is not an integer", node.Identifier.Val)
+			}
+		}
+
+		if node.TypeToken.Val == "bool" {
+			if _, ok := val.(bool); !ok {
+				return nil, fmt.Errorf("variable %s is not a boolean", node.Identifier.Val)
+			}
+		}
+	}
+
+	e.scope.Define(node.Identifier.Val, val)
+	return val, nil
+}
